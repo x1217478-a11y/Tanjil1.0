@@ -1,0 +1,6 @@
+{
+  "name": "Alap",
+  "description": "High-security real-time messenger with HD video and audio calling, group chats, photo posts, 24-hour stories, 15 to 60 second video reels, and ID verification.",
+  "requestFramePermissions": ["camera", "microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

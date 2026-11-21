@@ -1,0 +1,397 @@
+{
+  "entities": {
+    "UserPublicProfile": {
+      "title": "UserPublicProfile",
+      "description": "Public user profile without sensitive PII.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "username": { "type": "string", "minLength": 3, "maxLength": 30, "pattern": "^[a-zA-Z0-9_.]+$" },
+        "displayName": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "bio": { "type": "string", "maxLength": 240 },
+        "avatarUrl": { "type": "string", "maxLength": 512 },
+        "coverUrl": { "type": "string", "maxLength": 512 },
+        "city": { "type": "string", "maxLength": 80 },
+        "work": { "type": "string", "maxLength": 80 },
+        "isVerified": { "type": "boolean" },
+        "verificationStatus": { "type": "string", "enum": ["none", "pending", "verified", "rejected"] },
+        "isOnline": { "type": "boolean" },
+        "followersCount": { "type": "number" },
+        "friendsCount": { "type": "number" },
+        "publicKeyJwk": { "type": "string", "maxLength": 2048 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "username", "displayName", "isVerified", "verificationStatus", "isOnline", "followersCount", "friendsCount", "createdAt", "updatedAt"]
+    },
+    "UserPrivateInfo": {
+      "title": "UserPrivateInfo",
+      "description": "Owner-only PII and security configuration.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "email": { "type": "string", "maxLength": 254 },
+        "phone": { "type": "string", "maxLength": 32 },
+        "chatLockPinHash": { "type": "string", "maxLength": 128 },
+        "twoFactorEnabled": { "type": "boolean" },
+        "privacyDefault": { "type": "string", "enum": ["public", "friends", "only_me"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "twoFactorEnabled", "privacyDefault", "createdAt", "updatedAt"]
+    },
+    "AdminRecord": {
+      "title": "AdminRecord",
+      "description": "Authorized platform moderator/admin record.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "email": { "type": "string", "maxLength": 254 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "createdAt"]
+    },
+    "IdentityVerification": {
+      "title": "IdentityVerification",
+      "description": "KYC/ID verification submission reviewed by platform admins.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "fullName": { "type": "string", "minLength": 2, "maxLength": 100 },
+        "documentType": { "type": "string", "enum": ["nid", "passport", "driving_license"] },
+        "documentLast4": { "type": "string", "minLength": 2, "maxLength": 12 },
+        "documentHash": { "type": "string", "minLength": 16, "maxLength": 128 },
+        "idFrontUrl": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "selfieUrl": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
+        "reviewerNote": { "type": "string", "maxLength": 300 },
+        "reviewedBy": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "fullName", "documentType", "documentLast4", "documentHash", "idFrontUrl", "selfieUrl", "status", "createdAt", "updatedAt"]
+    },
+    "Friendship": {
+      "title": "Friendship",
+      "description": "Friend request, active friendship, or block relation.",
+      "type": "object",
+      "properties": {
+        "requesterId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "recipientId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "participantIds": { "type": "array" },
+        "status": { "type": "string", "enum": ["pending", "accepted", "blocked"] },
+        "blockedBy": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["requesterId", "recipientId", "participantIds", "status", "createdAt", "updatedAt"]
+    },
+    "ChatRoom": {
+      "title": "ChatRoom",
+      "description": "Personal 1-on-1 or Group Messenger conversation.",
+      "type": "object",
+      "properties": {
+        "type": { "type": "string", "enum": ["direct", "group"] },
+        "name": { "type": "string", "maxLength": 80 },
+        "avatarUrl": { "type": "string", "maxLength": 512 },
+        "createdBy": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "memberIds": { "type": "array" },
+        "adminIds": { "type": "array" },
+        "lastMessageText": { "type": "string", "maxLength": 300 },
+        "lastMessageSenderId": { "type": "string", "maxLength": 128 },
+        "lastMessageAt": { "type": "string", "format": "date-time" },
+        "isEncrypted": { "type": "boolean" },
+        "disappearingSeconds": { "type": "number" },
+        "safetyCode": { "type": "string", "maxLength": 64 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["type", "name", "createdBy", "memberIds", "adminIds", "isEncrypted", "disappearingSeconds", "safetyCode", "createdAt", "updatedAt"]
+    },
+    "ChatMember": {
+      "title": "ChatMember",
+      "description": "Membership metadata and chat security settings for a participant.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "chatId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "role": { "type": "string", "enum": ["admin", "member"] },
+        "nickname": { "type": "string", "maxLength": 40 },
+        "isMuted": { "type": "boolean" },
+        "isPinned": { "type": "boolean" },
+        "isArchived": { "type": "boolean" },
+        "isLocked": { "type": "boolean" },
+        "lastReadAt": { "type": "string", "format": "date-time" },
+        "joinedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "chatId", "role", "isMuted", "isPinned", "isArchived", "isLocked", "joinedAt"]
+    },
+    "ChatMessage": {
+      "title": "ChatMessage",
+      "description": "Individual chat message supporting text, audio, media, calls, and reactions.",
+      "type": "object",
+      "properties": {
+        "chatId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "senderId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "senderName": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "type": { "type": "string", "enum": ["text", "image", "audio", "video", "file", "call", "system"] },
+        "text": { "type": "string", "maxLength": 4000 },
+        "mediaUrl": { "type": "string", "maxLength": 512 },
+        "mediaDurationSec": { "type": "number" },
+        "replyToId": { "type": "string", "maxLength": 128 },
+        "replyToPreview": { "type": "string", "maxLength": 160 },
+        "reactions": { "type": "array" },
+        "isEdited": { "type": "boolean" },
+        "isDeleted": { "type": "boolean" },
+        "expiresAtMs": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["chatId", "senderId", "senderName", "type", "text", "reactions", "isEdited", "isDeleted", "expiresAtMs", "createdAt", "updatedAt"]
+    },
+    "SocialPost": {
+      "title": "SocialPost",
+      "description": "Facebook-style photo and text feed post.",
+      "type": "object",
+      "properties": {
+        "authorId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "authorName": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "authorUsername": { "type": "string", "minLength": 1, "maxLength": 32 },
+        "authorAvatar": { "type": "string", "maxLength": 512 },
+        "authorVerified": { "type": "boolean" },
+        "content": { "type": "string", "maxLength": 5000 },
+        "mediaUrl": { "type": "string", "maxLength": 512 },
+        "mediaType": { "type": "string", "enum": ["none", "image", "video"] },
+        "privacy": { "type": "string", "enum": ["public", "friends", "only_me"] },
+        "feeling": { "type": "string", "maxLength": 60 },
+        "location": { "type": "string", "maxLength": 80 },
+        "likesCount": { "type": "number" },
+        "commentsCount": { "type": "number" },
+        "sharesCount": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["authorId", "authorName", "authorUsername", "authorVerified", "content", "mediaType", "privacy", "likesCount", "commentsCount", "sharesCount", "createdAt", "updatedAt"]
+    },
+    "PostReaction": {
+      "title": "PostReaction",
+      "description": "Reaction on a feed post.",
+      "type": "object",
+      "properties": {
+        "postId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "type": { "type": "string", "enum": ["like", "love", "haha", "wow", "sad"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["postId", "userId", "type", "createdAt"]
+    },
+    "PostComment": {
+      "title": "PostComment",
+      "description": "Comment on a feed post.",
+      "type": "object",
+      "properties": {
+        "postId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "authorId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "authorName": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "authorAvatar": { "type": "string", "maxLength": 512 },
+        "authorVerified": { "type": "boolean" },
+        "text": { "type": "string", "minLength": 1, "maxLength": 1000 },
+        "parentCommentId": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["postId", "authorId", "authorName", "authorVerified", "text", "createdAt", "updatedAt"]
+    },
+    "StoryItem": {
+      "title": "StoryItem",
+      "description": "24-hour ephemeral story.",
+      "type": "object",
+      "properties": {
+        "authorId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "authorName": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "authorAvatar": { "type": "string", "maxLength": 512 },
+        "authorVerified": { "type": "boolean" },
+        "mediaUrl": { "type": "string", "maxLength": 512 },
+        "mediaType": { "type": "string", "enum": ["image", "text"] },
+        "caption": { "type": "string", "maxLength": 300 },
+        "bgStyle": { "type": "string", "maxLength": 64 },
+        "viewersCount": { "type": "number" },
+        "expiresAtMs": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["authorId", "authorName", "authorVerified", "mediaType", "viewersCount", "expiresAtMs", "createdAt"]
+    },
+    "StoryView": {
+      "title": "StoryView",
+      "description": "Record of a user viewing a story.",
+      "type": "object",
+      "properties": {
+        "storyId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "viewerId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "viewerName": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "viewedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["storyId", "viewerId", "viewerName", "viewedAt"]
+    },
+    "ShortReel": {
+      "title": "ShortReel",
+      "description": "15 to 60 second short video reel.",
+      "type": "object",
+      "properties": {
+        "authorId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "authorName": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "authorUsername": { "type": "string", "minLength": 1, "maxLength": 32 },
+        "authorAvatar": { "type": "string", "maxLength": 512 },
+        "authorVerified": { "type": "boolean" },
+        "videoUrl": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "thumbnailUrl": { "type": "string", "maxLength": 512 },
+        "caption": { "type": "string", "maxLength": 500 },
+        "audioTrack": { "type": "string", "maxLength": 120 },
+        "durationSeconds": { "type": "number" },
+        "likesCount": { "type": "number" },
+        "commentsCount": { "type": "number" },
+        "viewsCount": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["authorId", "authorName", "authorUsername", "authorVerified", "videoUrl", "durationSeconds", "likesCount", "commentsCount", "viewsCount", "createdAt", "updatedAt"]
+    },
+    "ReelLike": {
+      "title": "ReelLike",
+      "description": "Like on a short video reel.",
+      "type": "object",
+      "properties": {
+        "reelId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["reelId", "userId", "createdAt"]
+    },
+    "ReelComment": {
+      "title": "ReelComment",
+      "description": "Comment on a short video reel.",
+      "type": "object",
+      "properties": {
+        "reelId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "authorId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "authorName": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "authorAvatar": { "type": "string", "maxLength": 512 },
+        "authorVerified": { "type": "boolean" },
+        "text": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["reelId", "authorId", "authorName", "authorVerified", "text", "createdAt"]
+    },
+    "CallRecord": {
+      "title": "CallRecord",
+      "description": "Audio or video call session record.",
+      "type": "object",
+      "properties": {
+        "callerId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "callerName": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "callerAvatar": { "type": "string", "maxLength": 512 },
+        "calleeId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "calleeName": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "chatId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "callType": { "type": "string", "enum": ["audio", "video", "group"] },
+        "status": { "type": "string", "enum": ["ringing", "active", "ended", "declined", "missed"] },
+        "durationSeconds": { "type": "number" },
+        "participantIds": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["callerId", "callerName", "calleeId", "calleeName", "chatId", "callType", "status", "durationSeconds", "participantIds", "createdAt", "updatedAt"]
+    },
+    "NotificationItem": {
+      "title": "NotificationItem",
+      "description": "User activity notification.",
+      "type": "object",
+      "properties": {
+        "recipientId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "actorId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "actorName": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "actorAvatar": { "type": "string", "maxLength": 512 },
+        "type": { "type": "string", "enum": ["friend_request", "friend_accept", "like", "comment", "call", "verification", "message"] },
+        "targetId": { "type": "string", "maxLength": 128 },
+        "text": { "type": "string", "minLength": 1, "maxLength": 240 },
+        "isRead": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["recipientId", "actorId", "actorName", "type", "text", "isRead", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserPublicProfile" },
+      "description": "Public profile directory."
+    },
+    "/users/{userId}/private/{docId}": {
+      "schema": { "$ref": "#/entities/UserPrivateInfo" },
+      "description": "Owner-only PII and security lock settings."
+    },
+    "/admins/{userId}": {
+      "schema": { "$ref": "#/entities/AdminRecord" },
+      "description": "Platform admin registry."
+    },
+    "/verifications/{verificationId}": {
+      "schema": { "$ref": "#/entities/IdentityVerification" },
+      "description": "Identity verification submissions."
+    },
+    "/friendships/{friendshipId}": {
+      "schema": { "$ref": "#/entities/Friendship" },
+      "description": "Friendships, pending requests, and blocks."
+    },
+    "/chats/{chatId}": {
+      "schema": { "$ref": "#/entities/ChatRoom" },
+      "description": "Direct and group chat rooms."
+    },
+    "/chats/{chatId}/members/{memberId}": {
+      "schema": { "$ref": "#/entities/ChatMember" },
+      "description": "Chat room participants and per-chat preferences."
+    },
+    "/chats/{chatId}/messages/{messageId}": {
+      "schema": { "$ref": "#/entities/ChatMessage" },
+      "description": "Chat messages subcollection."
+    },
+    "/posts/{postId}": {
+      "schema": { "$ref": "#/entities/SocialPost" },
+      "description": "Social feed posts."
+    },
+    "/posts/{postId}/reactions/{userId}": {
+      "schema": { "$ref": "#/entities/PostReaction" },
+      "description": "Post reactions keyed by reacting user ID."
+    },
+    "/posts/{postId}/comments/{commentId}": {
+      "schema": { "$ref": "#/entities/PostComment" },
+      "description": "Post comments."
+    },
+    "/stories/{storyId}": {
+      "schema": { "$ref": "#/entities/StoryItem" },
+      "description": "24-hour ephemeral stories."
+    },
+    "/stories/{storyId}/views/{viewerId}": {
+      "schema": { "$ref": "#/entities/StoryView" },
+      "description": "Story view records."
+    },
+    "/reels/{reelId}": {
+      "schema": { "$ref": "#/entities/ShortReel" },
+      "description": "15 to 60 second short video reels."
+    },
+    "/reels/{reelId}/likes/{userId}": {
+      "schema": { "$ref": "#/entities/ReelLike" },
+      "description": "Reel likes keyed by user ID."
+    },
+    "/reels/{reelId}/comments/{commentId}": {
+      "schema": { "$ref": "#/entities/ReelComment" },
+      "description": "Reel comments."
+    },
+    "/calls/{callId}": {
+      "schema": { "$ref": "#/entities/CallRecord" },
+      "description": "Audio and video call records."
+    },
+    "/notifications/{notificationId}": {
+      "schema": { "$ref": "#/entities/NotificationItem" },
+      "description": "User notifications."
+    }
+  }
+}
