@@ -3,8 +3,10 @@ import {
   addDoc,
   collection,
   deleteDoc,
+  deleteField,
   doc,
   getDoc,
+  limit,
   onSnapshot,
   orderBy,
   query,
@@ -34,8 +36,10 @@ import {
   Smile,
   ShieldCheck,
   UserPlus,
+  Sparkles,
 } from 'lucide-react';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
+import { generateAiText } from '../lib/aiClient';
 import { compressImageFile, uploadMediaBlob } from '../lib/mediaUpload';
 import { formatRelativeTime, sanitizeMediaUrl } from '../lib/security';
 import { Avatar, VerifiedBadge } from './Avatar';
@@ -75,6 +79,8 @@ const REACTION_META: { type: ReactionType; emoji: string; label: string }[] = [
   { type: 'sad', emoji: '😢', label: 'Sad' },
 ];
 
+const STORY_REACTION_EMOJIS = ['❤️', '🔥', '😂', '😮', '😢', '👍'] as const;
+
 export function FeedAndStoriesView({
   currentUser,
   allUsers,
@@ -97,6 +103,10 @@ export function FeedAndStoriesView({
   const [showMetaInputs, setShowMetaInputs] = useState(false);
   const [uploadingPostImg, setUploadingPostImg] = useState(false);
   const [publishingPost, setPublishingPost] = useState(false);
+  const [showAiDraft, setShowAiDraft] = useState(false);
+  const [aiDraftPrompt, setAiDraftPrompt] = useState('');
+  const [aiDraftLoading, setAiDraftLoading] = useState(false);
+  const [aiDraftError, setAiDraftError] = useState('');
 
   // Post Reactions & Comments
   const [myReactions, setMyReactions] = useState<Record<string, ReactionType>>({});
@@ -113,6 +123,7 @@ export function FeedAndStoriesView({
   const [uploadingStory, setUploadingStory] = useState(false);
   const [activeStoryIndex, setActiveStoryIndex] = useState<number | null>(null);
   const [storyReplyText, setStoryReplyText] = useState('');
+  const [reactingStoryId, setReactingStoryId] = useState<string | null>(null);
 
   const acceptedFriendIds = useMemo(() => {
     const set = new Set<string>();
@@ -130,7 +141,8 @@ export function FeedAndStoriesView({
     const q = query(
       collection(db, 'stories'),
       where('expiresAtMs', '>', Date.now()),
-      orderBy('expiresAtMs', 'desc')
+      orderBy('expiresAtMs', 'desc'),
+      limit(40)
     );
     const unsub = onSnapshot(
       q,
@@ -149,7 +161,8 @@ export function FeedAndStoriesView({
   useEffect(() => {
     const qPublic = query(
       collection(db, 'posts'),
-      where('privacy', 'in', ['public', 'friends'])
+      where('privacy', 'in', ['public', 'friends']),
+      limit(50)
     );
     const unsub = onSnapshot(
       qPublic,
@@ -210,7 +223,8 @@ export function FeedAndStoriesView({
     if (!openCommentsPostId) return;
     const q = query(
       collection(db, 'posts', openCommentsPostId, 'comments'),
-      where('postId', '==', openCommentsPostId)
+      where('postId', '==', openCommentsPostId),
+      limit(50)
     );
     const unsub = onSnapshot(
       q,
@@ -400,6 +414,7 @@ export function FeedAndStoriesView({
         caption: storyCaption.trim().slice(0, VALIDATION_CONSTRAINTS.STORY_CAPTION_MAX),
         bgStyle: storyBg,
         viewersCount: 0,
+        reactions: {},
         expiresAtMs: Date.now() + 24 * 60 * 60 * 1000,
         createdAt: serverTimestamp(),
       });
@@ -407,6 +422,21 @@ export function FeedAndStoriesView({
       setStoryCaption('');
     } catch (err) {
       handleFirestoreError(err, OperationType.CREATE, 'stories');
+    }
+  };
+
+  const handleStoryReaction = async (story: StoryItem, emoji: string) => {
+    const currentEmoji = story.reactions?.[currentUser.uid];
+    const isRemoving = currentEmoji === emoji;
+    setReactingStoryId(story.id);
+    try {
+      await updateDoc(doc(db, 'stories', story.id), {
+        [`reactions.${currentUser.uid}`]: isRemoving ? deleteField() : emoji,
+      });
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, `stories/${story.id}`);
+    } finally {
+      setReactingStoryId(null);
     }
   };
 
@@ -440,6 +470,36 @@ export function FeedAndStoriesView({
   }, [allUsers, friendships, currentUser.uid]);
 
   const activeStory = activeStoryIndex !== null ? stories[activeStoryIndex] : null;
+
+  const activeStoryReactionSummary = useMemo(() => {
+    if (!activeStory?.reactions) return [];
+    const counts: Record<string, number> = {};
+    for (const emoji of Object.values(activeStory.reactions)) {
+      if (emoji) counts[emoji] = (counts[emoji] || 0) + 1;
+    }
+    return Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  }, [activeStory]);
+
+  const handleGeneratePostDraft = async () => {
+    setAiDraftLoading(true);
+    setAiDraftError('');
+    try {
+      const prompt = aiDraftPrompt.trim() || postText.trim() || 'Explain how AI works in a few words';
+      const res = await generateAiText({
+        prompt,
+        mode: 'draft_post',
+      });
+      if (res.text) {
+        setPostText(res.text.slice(0, VALIDATION_CONSTRAINTS.POST_CONTENT_MAX));
+        setShowAiDraft(false);
+        setAiDraftPrompt('');
+      }
+    } catch (err) {
+      setAiDraftError(err instanceof Error ? err.message : 'Failed to generate post draft');
+    } finally {
+      setAiDraftLoading(false);
+    }
+  };
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 grid grid-cols-1 xl:grid-cols-12 gap-8">
@@ -476,6 +536,9 @@ export function FeedAndStoriesView({
 
             {stories.map((story, idx) => {
               const imgUrl = sanitizeMediaUrl(story.mediaUrl);
+              const reactionEntries = Object.values(story.reactions || {});
+              const myStoryEmoji = story.reactions?.[currentUser.uid];
+              const topEmoji = myStoryEmoji || reactionEntries[0] || '';
               return (
                 <button
                   key={story.id}
@@ -498,12 +561,19 @@ export function FeedAndStoriesView({
                     </div>
                   )}
                   <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-transparent to-black/25 p-2.5 flex flex-col justify-between">
-                    <Avatar
-                      src={story.authorAvatar}
-                      name={story.authorName}
-                      size="xs"
-                      className="ring-2 ring-sky-500 rounded-full"
-                    />
+                    <div className="flex items-start justify-between gap-1">
+                      <Avatar
+                        src={story.authorAvatar}
+                        name={story.authorName}
+                        size="xs"
+                        className="ring-2 ring-sky-500 rounded-full"
+                      />
+                      {reactionEntries.length > 0 && (
+                        <span className="px-1.5 py-0.5 rounded-lg bg-black/55 backdrop-blur-xs text-[10px] font-medium text-white">
+                          {topEmoji} {reactionEntries.length}
+                        </span>
+                      )}
+                    </div>
                     <span className="text-[11px] font-semibold text-white truncate">
                       {story.authorName}
                     </span>
@@ -568,6 +638,37 @@ export function FeedAndStoriesView({
               </div>
             )}
 
+            {showAiDraft && (
+              <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-2">
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={aiDraftPrompt}
+                    onChange={(e) => setAiDraftPrompt(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        void handleGeneratePostDraft();
+                      }
+                    }}
+                    placeholder="Topic for Gemini (e.g. Explain how AI works in a few words)..."
+                    className="flex-1 min-w-0 px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-sky-500/40"
+                  />
+                  <button
+                    type="button"
+                    disabled={aiDraftLoading}
+                    onClick={() => void handleGeneratePostDraft()}
+                    className="px-3 py-2 rounded-xl bg-sky-600 hover:bg-sky-700 disabled:opacity-50 text-white text-xs font-semibold shrink-0"
+                  >
+                    {aiDraftLoading ? 'Drafting...' : 'Draft Post'}
+                  </button>
+                </div>
+                {aiDraftError && (
+                  <p className="text-xs text-rose-600 dark:text-rose-400">{aiDraftError}</p>
+                )}
+              </div>
+            )}
+
             <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-100 dark:border-slate-800">
               <div className="flex items-center gap-2">
                 <label className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-medium text-slate-700 dark:text-slate-300 cursor-pointer transition-colors">
@@ -589,6 +690,19 @@ export function FeedAndStoriesView({
                 >
                   <Smile className="w-4 h-4 text-amber-500" />
                   Feeling / Location
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowAiDraft((v) => !v)}
+                  className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium transition-colors ${
+                    showAiDraft
+                      ? 'bg-sky-50 dark:bg-sky-950/60 text-sky-600 dark:text-sky-400'
+                      : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300'
+                  }`}
+                >
+                  <Sparkles className="w-4 h-4 text-sky-500" />
+                  AI Draft
                 </button>
 
                 <select
@@ -1159,10 +1273,59 @@ export function FeedAndStoriesView({
               </button>
             </div>
 
-            <div className="relative z-10 p-4 bg-gradient-to-t from-black/80 to-transparent space-y-2">
+            <div className="relative z-10 p-4 bg-gradient-to-t from-black/85 via-black/50 to-transparent space-y-2.5">
               {activeStory.mediaType === 'image' && activeStory.caption && (
                 <p className="text-sm text-white text-center">{activeStory.caption}</p>
               )}
+
+              {/* Story Reaction Counts Summary */}
+              {activeStoryReactionSummary.length > 0 && (
+                <div className="flex flex-wrap items-center justify-center gap-1.5">
+                  {activeStoryReactionSummary.map(([emoji, count]) => {
+                    const isMine = activeStory.reactions?.[currentUser.uid] === emoji;
+                    return (
+                      <button
+                        key={emoji}
+                        type="button"
+                        disabled={reactingStoryId === activeStory.id}
+                        onClick={() => void handleStoryReaction(activeStory, emoji)}
+                        className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs font-medium backdrop-blur-md transition-colors ${
+                          isMine
+                            ? 'bg-sky-500/80 text-white ring-1 ring-white/60'
+                            : 'bg-black/45 text-white/90 hover:bg-black/65'
+                        }`}
+                      >
+                        <span>{emoji}</span>
+                        <span className="font-mono text-[11px]">{count}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Quick Emoji Reaction Bar */}
+              <div className="flex items-center justify-center gap-1.5">
+                {STORY_REACTION_EMOJIS.map((emoji) => {
+                  const selected = activeStory.reactions?.[currentUser.uid] === emoji;
+                  return (
+                    <button
+                      key={emoji}
+                      type="button"
+                      disabled={reactingStoryId === activeStory.id}
+                      onClick={() => void handleStoryReaction(activeStory, emoji)}
+                      aria-label={`React ${emoji} to story`}
+                      className={`w-9 h-9 rounded-xl flex items-center justify-center text-lg backdrop-blur-md transition-all ${
+                        selected
+                          ? 'bg-white/30 ring-2 ring-white scale-110'
+                          : 'bg-white/10 hover:bg-white/25 hover:scale-105'
+                      }`}
+                    >
+                      {emoji}
+                    </button>
+                  );
+                })}
+              </div>
+
               {activeStory.authorId !== currentUser.uid && (
                 <form
                   onSubmit={(e) => {

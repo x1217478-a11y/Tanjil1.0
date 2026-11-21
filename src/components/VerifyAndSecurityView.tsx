@@ -3,7 +3,6 @@ import {
   collection,
   doc,
   onSnapshot,
-  orderBy,
   query,
   serverTimestamp,
   updateDoc,
@@ -12,18 +11,36 @@ import {
 } from 'firebase/firestore';
 import {
   BadgeCheck,
+  Bell,
   Camera,
   CheckCircle2,
+  Cpu,
+  Database,
   FileCheck,
+  HardDrive,
   KeyRound,
   Lock,
+  Mic,
+  Radio,
+  RefreshCw,
+  Server,
   Shield,
   ShieldCheck,
   Upload,
+  Wifi,
   XCircle,
 } from 'lucide-react';
 import { auth, db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { compressImageFile, uploadMediaBlob } from '../lib/mediaUpload';
+import {
+  checkDevicePermissions,
+  fetchSystemStatus,
+  requestAllPermissions,
+  requestMediaPermission,
+  requestNotificationPermission,
+  type DevicePermissionsSummary,
+  type SystemStatusReport,
+} from '../lib/permissions';
 import { sanitizeMediaUrl, sha256Hex } from '../lib/security';
 import {
   VALIDATION_CONSTRAINTS,
@@ -70,7 +87,37 @@ export function VerifyAndSecurityView({
   const [secMsg, setSecMsg] = useState('');
   const [savingSec, setSavingSec] = useState(false);
 
-  const isAdminUser = auth.currentUser?.email === 'tanjilahmedjoy797@gmail.com';
+  // Device Permissions & Server Guardrails
+  const [permissions, setPermissions] = useState<DevicePermissionsSummary>({
+    camera: 'prompt',
+    microphone: 'prompt',
+    notifications: 'prompt',
+  });
+  const [serverInfo, setServerInfo] = useState<SystemStatusReport | null>(null);
+  const [loadingServerInfo, setLoadingServerInfo] = useState(false);
+  const [permMsg, setPermMsg] = useState('');
+
+  const isAdminUser =
+    auth.currentUser?.email === 'tanjilahmedjoy85@gmail.com' ||
+    auth.currentUser?.email === 'tanjilahmedjoy797@gmail.com';
+
+  const refreshPermissionsAndServer = async () => {
+    setLoadingServerInfo(true);
+    try {
+      const [perms, sys] = await Promise.all([
+        checkDevicePermissions(),
+        fetchSystemStatus().catch(() => null),
+      ]);
+      setPermissions(perms);
+      if (sys) setServerInfo(sys);
+    } finally {
+      setLoadingServerInfo(false);
+    }
+  };
+
+  useEffect(() => {
+    void refreshPermissionsAndServer();
+  }, []);
 
   useEffect(() => {
     setTwoFactor(privateInfo?.twoFactorEnabled || false);
@@ -571,6 +618,246 @@ export function VerifyAndSecurityView({
           </form>
         </section>
       </div>
+
+      {/* Device Permissions & Free-Tier Server Architecture */}
+      <section className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 space-y-5">
+        <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-slate-100 dark:border-slate-800">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-sky-50 dark:bg-sky-950/60 text-sky-600 dark:text-sky-400 flex items-center justify-center">
+              <Server className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="font-display font-bold text-slate-900 dark:text-white">
+                Device Permissions & Free-Tier Server Guardrails
+              </h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Grant media permissions for HD calling and inspect Cloudflare R2, WebRTC, AI, and Firestore free-tier budgets.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={async () => {
+                const summary = await requestAllPermissions();
+                setPermissions(summary);
+                setPermMsg(
+                  summary.camera === 'granted' && summary.microphone === 'granted'
+                    ? 'Camera, microphone, and call alerts configured.'
+                    : 'Permission check complete. Allow blocked permissions in browser settings if needed.'
+                );
+              }}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-sky-600 hover:bg-sky-700 text-xs font-semibold text-white transition-colors"
+            >
+              <ShieldCheck className="w-3.5 h-3.5" />
+              Enable All Permissions
+            </button>
+            <button
+              type="button"
+              disabled={loadingServerInfo}
+              onClick={() => void refreshPermissionsAndServer()}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-200"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${loadingServerInfo ? 'animate-spin' : ''}`} />
+              Refresh
+            </button>
+          </div>
+        </div>
+
+        {/* Interactive Permissions Grid */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <Camera className="w-4 h-4 text-sky-600 dark:text-sky-400 shrink-0" />
+              <div className="min-w-0">
+                <p className="text-xs font-semibold text-slate-900 dark:text-white">Camera</p>
+                <p className="text-[11px] text-slate-500 capitalize">{permissions.camera}</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={async () => {
+                const state = await requestMediaPermission('camera');
+                setPermissions((p) => ({ ...p, camera: state }));
+                setPermMsg(
+                  state === 'granted'
+                    ? 'Camera permission granted for video calls & live reels.'
+                    : 'Camera access was blocked in browser settings.'
+                );
+              }}
+              className="px-2.5 py-1.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-[11px] font-semibold text-slate-800 dark:text-slate-200 hover:bg-slate-100 shrink-0"
+            >
+              {permissions.camera === 'granted' ? 'Active' : 'Enable'}
+            </button>
+          </div>
+
+          <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <Mic className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+              <div className="min-w-0">
+                <p className="text-xs font-semibold text-slate-900 dark:text-white">Microphone</p>
+                <p className="text-[11px] text-slate-500 capitalize">{permissions.microphone}</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={async () => {
+                const state = await requestMediaPermission('microphone');
+                setPermissions((p) => ({ ...p, microphone: state }));
+                setPermMsg(
+                  state === 'granted'
+                    ? 'Microphone permission granted for voice notes & audio/video calls.'
+                    : 'Microphone access was blocked in browser settings.'
+                );
+              }}
+              className="px-2.5 py-1.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-[11px] font-semibold text-slate-800 dark:text-slate-200 hover:bg-slate-100 shrink-0"
+            >
+              {permissions.microphone === 'granted' ? 'Active' : 'Enable'}
+            </button>
+          </div>
+
+          <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <Bell className="w-4 h-4 text-amber-500 shrink-0" />
+              <div className="min-w-0">
+                <p className="text-xs font-semibold text-slate-900 dark:text-white">Call Alerts</p>
+                <p className="text-[11px] text-slate-500 capitalize">{permissions.notifications}</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={async () => {
+                const state = await requestNotificationPermission();
+                setPermissions((p) => ({ ...p, notifications: state }));
+                setPermMsg(
+                  state === 'granted'
+                    ? 'Call & message notifications enabled.'
+                    : 'Notifications were not enabled.'
+                );
+              }}
+              className="px-2.5 py-1.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-[11px] font-semibold text-slate-800 dark:text-slate-200 hover:bg-slate-100 shrink-0"
+            >
+              {permissions.notifications === 'granted' ? 'Active' : 'Enable'}
+            </button>
+          </div>
+        </div>
+
+        {permMsg && <p className="text-xs text-sky-600 dark:text-sky-400">{permMsg}</p>}
+
+        {/* Free-Tier Server & Storage Budgets */}
+        {serverInfo && (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 pt-2">
+            <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-1.5">
+              <div className="flex items-center gap-2 text-xs font-bold text-slate-900 dark:text-white">
+                <HardDrive className="w-4 h-4 text-sky-600 dark:text-sky-400" />
+                Cloudflare R2 Storage
+              </div>
+              <p className="text-[11px] font-mono text-slate-500 truncate">
+                {serverInfo.r2.bucket} · {serverInfo.r2.accountId.slice(0, 10)}…
+              </p>
+              <p className="text-[11px] text-slate-600 dark:text-slate-300">
+                Mode: {serverInfo.r2.tokensConfigured ? 'R2 + Local Cache' : 'Local Cache Fallback'}
+              </p>
+              <p className="text-[11px] font-mono text-slate-500">
+                {(serverInfo.r2.usage.estimatedStorageBytes / (1024 * 1024)).toFixed(1)} MB /{' '}
+                {(serverInfo.r2.usage.maxStorageBytes / (1024 * 1024 * 1024)).toFixed(1)} GB cap ·{' '}
+                {serverInfo.r2.usage.monthlyClassAOps} Class A
+              </p>
+            </div>
+
+            <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-1.5">
+              <div className="flex items-center gap-2 text-xs font-bold text-slate-900 dark:text-white">
+                <Wifi className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                WebRTC Calling & TURN
+              </div>
+              <p className="text-[11px] text-slate-600 dark:text-slate-300">
+                {serverInfo.webrtc.stunServersCount} STUN servers active
+              </p>
+              <p className="text-[11px] text-slate-500">
+                TURN:{' '}
+                {serverInfo.webrtc.turnProvider === 'cloudflare-calls'
+                  ? 'Cloudflare TURN (1 TB free)'
+                  : serverInfo.webrtc.turnConfigured
+                    ? 'Static TURN Relay'
+                    : 'STUN P2P Mode'}
+              </p>
+              <p className="text-[11px] font-mono text-slate-500">
+                Video cap: {serverInfo.webrtc.maxVideoBitrateKbps ?? 900} kbps HD
+              </p>
+            </div>
+
+            <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-1.5">
+              <div className="flex items-center gap-2 text-xs font-bold text-slate-900 dark:text-white">
+                <Radio className="w-4 h-4 text-sky-600 dark:text-sky-400" />
+                Real-Time Signaling
+              </div>
+              <p className="text-[11px] text-slate-600 dark:text-slate-300">
+                {serverInfo.realtime.httpsFallbackActive
+                  ? 'WebSocket + HTTPS Fallback'
+                  : 'WebSocket Primary'}
+              </p>
+              <p className="text-[11px] text-slate-500">
+                {serverInfo.realtime.activeUsers} active users · {serverInfo.realtime.activeSockets}{' '}
+                sockets
+              </p>
+              <p className="text-[11px] font-mono text-slate-500">
+                Max {serverInfo.realtime.maxSocketsPerUser} tabs/user ·{' '}
+                {serverInfo.realtime.heartbeatSeconds}s ping
+              </p>
+            </div>
+
+            <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-1.5">
+              <div className="flex items-center gap-2 text-xs font-bold text-slate-900 dark:text-white">
+                <ShieldCheck className="w-4 h-4 text-sky-600 dark:text-sky-400" />
+                Gemini Free Guardrail
+              </div>
+              <p className="text-[11px] font-mono text-slate-500 truncate">
+                {serverInfo.ai.model}
+              </p>
+              <p className="text-[11px] text-slate-600 dark:text-slate-300">
+                {serverInfo.ai.configured ? 'Server Key Active' : 'Secret Pending'}
+              </p>
+              <p className="text-[11px] font-mono text-slate-500">
+                {serverInfo.ai.dailyRequestsUsed} / {serverInfo.ai.dailyRequestsCap} today ·{' '}
+                {serverInfo.ai.perUserPerMinuteCap}/min
+              </p>
+            </div>
+
+            <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-1.5">
+              <div className="flex items-center gap-2 text-xs font-bold text-slate-900 dark:text-white">
+                <Database className="w-4 h-4 text-amber-500" />
+                Firestore Spark
+              </div>
+              <p className="text-[11px] font-mono text-slate-500 truncate">
+                {serverInfo.firestore.projectId || 'Configured'}
+              </p>
+              <p className="text-[11px] text-slate-600 dark:text-slate-300">
+                Bounded queries active
+              </p>
+              <p className="text-[11px] font-mono text-slate-500">
+                Reads capped per view
+              </p>
+            </div>
+
+            <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-1.5">
+              <div className="flex items-center gap-2 text-xs font-bold text-slate-900 dark:text-white">
+                <Cpu className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                Hosting Runtime
+              </div>
+              <p className="text-[11px] font-mono text-slate-500 truncate">
+                {serverInfo.hosting?.platform || 'Render-Ready Node'}
+              </p>
+              <p className="text-[11px] text-slate-600 dark:text-slate-300">
+                Node {serverInfo.hosting?.nodeVersion || '22+'} ·{' '}
+                {serverInfo.hosting?.environment || 'production'}
+              </p>
+              <p className="text-[11px] font-mono text-slate-500">
+                Port {serverInfo.hosting?.port || 3000} · Uptime {serverInfo.hosting?.uptimeSeconds || 0}s
+              </p>
+            </div>
+          </div>
+        )}
+      </section>
 
       {/* Admin Verification Review Queue */}
       {isAdminUser && (

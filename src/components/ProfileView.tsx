@@ -5,6 +5,7 @@ import {
   deleteDoc,
   doc,
   increment,
+  limit,
   onSnapshot,
   query,
   serverTimestamp,
@@ -84,17 +85,19 @@ export function ProfileView({
 
   useEffect(() => {
     const qPosts = isOwnProfile
-      ? query(collection(db, 'posts'), where('authorId', '==', profileUser.uid))
+      ? query(collection(db, 'posts'), where('authorId', '==', profileUser.uid), limit(40))
       : isAcceptedFriend
         ? query(
             collection(db, 'posts'),
             where('authorId', '==', profileUser.uid),
-            where('privacy', 'in', ['public', 'friends'])
+            where('privacy', 'in', ['public', 'friends']),
+            limit(40)
           )
         : query(
             collection(db, 'posts'),
             where('authorId', '==', profileUser.uid),
-            where('privacy', '==', 'public')
+            where('privacy', '==', 'public'),
+            limit(40)
           );
     const unsubPosts = onSnapshot(
       qPosts,
@@ -111,7 +114,8 @@ export function ProfileView({
       collection(db, 'reels'),
       where('authorId', '==', profileUser.uid),
       where('durationSeconds', '>=', 15),
-      where('durationSeconds', '<=', 60)
+      where('durationSeconds', '<=', 60),
+      limit(30)
     );
     const unsubReels = onSnapshot(
       qReels,

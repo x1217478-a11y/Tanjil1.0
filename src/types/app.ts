@@ -179,6 +179,7 @@ export interface StoryItem {
   caption?: string;
   bgStyle?: string;
   viewersCount: number;
+  reactions?: Record<string, string>;
   expiresAtMs: number;
   createdAt: Timestamp;
 }

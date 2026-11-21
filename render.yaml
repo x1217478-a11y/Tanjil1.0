@@ -1,0 +1,36 @@
+services:
+  - type: web
+    name: alap-messenger
+    runtime: node
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: R2_ACCOUNT_ID
+        value: d862607d4f089ab670bd9e4611a6e2e1
+      - key: R2_ENDPOINT
+        value: https://d862607d4f089ab670bd9e4611a6e2e1.r2.cloudflarestorage.com
+      - key: R2_BUCKET
+        value: zan-gi-media
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
+      - key: R2_PUBLIC_URL
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: TURN_URLS
+        sync: false
+      - key: TURN_USERNAME
+        sync: false
+      - key: TURN_CREDENTIAL
+        sync: false
+      - key: CLOUDFLARE_TURN_TOKEN_ID
+        sync: false
+      - key: CLOUDFLARE_TURN_API_TOKEN
+        sync: false

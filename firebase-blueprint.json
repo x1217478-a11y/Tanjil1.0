@@ -216,6 +216,7 @@
         "caption": { "type": "string", "maxLength": 300 },
         "bgStyle": { "type": "string", "maxLength": 64 },
         "viewersCount": { "type": "number" },
+        "reactions": { "type": "object", "description": "Map of reacting userId to emoji reaction." },
         "expiresAtMs": { "type": "number" },
         "createdAt": { "type": "string", "format": "date-time" }
       },

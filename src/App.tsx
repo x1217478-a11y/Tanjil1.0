@@ -3,16 +3,19 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { onAuthStateChanged, type User } from 'firebase/auth';
 import {
   addDoc,
   collection,
   doc,
+  getDoc,
   getDocs,
+  limit,
   onSnapshot,
   query,
   serverTimestamp,
+  setDoc,
   where,
   writeBatch,
 } from 'firebase/firestore';
@@ -28,7 +31,7 @@ import {
 } from 'lucide-react';
 import { auth, db, handleFirestoreError, OperationType } from './lib/firebase';
 import { generateSafetyCode } from './lib/security';
-import { useRealtimeSocket, type IncomingCallSignal, type WebRtcSignalEvent } from './hooks/useRealtimeSocket';
+import { useRealtimeSocket, type IncomingCallSignal } from './hooks/useRealtimeSocket';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { AuthGate } from './components/AuthGate';
 import { Avatar, VerifiedBadge } from './components/Avatar';
@@ -40,6 +43,7 @@ import { VerifyAndSecurityView } from './components/VerifyAndSecurityView';
 import { ProfileView } from './components/ProfileView';
 import { CallOverlay, type ActiveCallSession } from './components/CallOverlay';
 import type {
+  CallRecord,
   CallType,
   ChatRoom,
   Friendship,
@@ -76,33 +80,58 @@ function AlapApp() {
 
   // Call State
   const [activeCall, setActiveCall] = useState<ActiveCallSession | null>(null);
-  const [latestSignal, setLatestSignal] = useState<WebRtcSignalEvent | null>(null);
+  const activeCallRef = useRef<ActiveCallSession | null>(null);
+  activeCallRef.current = activeCall;
+  const sendSocketEventRef = useRef<(payload: Record<string, unknown>) => void>(() => {});
+  const handledCallIdsRef = useRef<Set<string>>(new Set());
 
   const handleIncomingCall = useCallback((sig: IncomingCallSignal) => {
-    setActiveCall((prev) => {
-      if (prev) return prev; // Busy
-      return {
+    if (handledCallIdsRef.current.has(sig.callId)) return;
+    if (activeCallRef.current) {
+      handledCallIdsRef.current.add(sig.callId);
+      sendSocketEventRef.current({
+        type: 'call:busy',
+        targetUid: sig.callerId,
         callId: sig.callId,
-        chatId: sig.chatId,
-        direction: 'incoming',
-        callType: sig.callType,
-        peerId: sig.callerId,
-        peerName: sig.callerName,
-        peerAvatar: sig.callerAvatar,
-        status: 'ringing',
-      };
+      });
+      return;
+    }
+    handledCallIdsRef.current.add(sig.callId);
+
+    if (
+      typeof Notification !== 'undefined' &&
+      Notification.permission === 'granted' &&
+      document.hidden
+    ) {
+      try {
+        const notif = new Notification(`Incoming ${sig.callType} call from ${sig.callerName}`, {
+          body: 'Return to Alap to answer or decline.',
+          tag: `call-${sig.callId}`,
+        });
+        notif.onclick = () => {
+          window.focus();
+          notif.close();
+        };
+      } catch {
+        // Ignore notification errors
+      }
+    }
+
+    setActiveCall({
+      callId: sig.callId,
+      chatId: sig.chatId,
+      direction: 'incoming',
+      callType: sig.callType,
+      peerId: sig.callerId,
+      peerName: sig.callerName,
+      peerAvatar: sig.callerAvatar,
+      status: 'ringing',
     });
   }, []);
 
-  const handleWebRtcSignal = useCallback((ev: WebRtcSignalEvent) => {
-    setLatestSignal(ev);
-  }, []);
-
-  const { onlineUserIds, typingByChat, sendSocketEvent } = useRealtimeSocket(
-    currentUser?.uid,
-    handleIncomingCall,
-    handleWebRtcSignal
-  );
+  const { onlineUserIds, typingByChat, connected, sendSocketEvent, subscribeSignals } =
+    useRealtimeSocket(currentUser?.uid, handleIncomingCall);
+  sendSocketEventRef.current = sendSocketEvent;
 
   // 1. Auth Listener
   useEffect(() => {
@@ -163,7 +192,8 @@ function AlapApp() {
     const unsubUsers = onSnapshot(
       query(
         collection(db, 'users'),
-        where('verificationStatus', 'in', ['none', 'pending', 'verified', 'rejected'])
+        where('verificationStatus', 'in', ['none', 'pending', 'verified', 'rejected']),
+        limit(100)
       ),
       (snap) => {
         setAllUsers(snap.docs.map((d) => d.data() as UserPublicProfile));
@@ -173,7 +203,8 @@ function AlapApp() {
 
     const qFriends = query(
       collection(db, 'friendships'),
-      where('participantIds', 'array-contains', currentUser.uid)
+      where('participantIds', 'array-contains', currentUser.uid),
+      limit(100)
     );
     const unsubFriends = onSnapshot(
       qFriends,
@@ -190,6 +221,61 @@ function AlapApp() {
       unsubFriends();
     };
   }, [currentUser?.uid]);
+
+  // 4. Owner Admin Auto-Bootstrap & Dual-Channel Incoming Call Listener
+  useEffect(() => {
+    if (!currentUser || !firebaseUser) return;
+
+    const ownerEmails = ['tanjilahmedjoy85@gmail.com', 'tanjilahmedjoy797@gmail.com'];
+    if (firebaseUser.email && ownerEmails.includes(firebaseUser.email) && firebaseUser.emailVerified) {
+      const adminRef = doc(db, 'admins', firebaseUser.uid);
+      void getDoc(adminRef)
+        .then((snap) => {
+          if (!snap.exists()) {
+            return setDoc(adminRef, {
+              uid: firebaseUser.uid,
+              email: firebaseUser.email,
+              createdAt: serverTimestamp(),
+            });
+          }
+          return undefined;
+        })
+        .catch(() => {});
+    }
+
+    const qCalls = query(
+      collection(db, 'calls'),
+      where('participantIds', 'array-contains', currentUser.uid),
+      limit(15)
+    );
+    const unsubCalls = onSnapshot(
+      qCalls,
+      (snap) => {
+        const now = Date.now();
+        for (const d of snap.docs) {
+          const data = d.data() as Omit<CallRecord, 'id'>;
+          if (data.status !== 'ringing') continue;
+          if (data.callerId === currentUser.uid) continue;
+          if (handledCallIdsRef.current.has(d.id)) continue;
+          const createdMs = data.createdAt?.toMillis() || now;
+          if (now - createdMs > 55_000) continue;
+
+          handleIncomingCall({
+            callId: d.id,
+            chatId: data.chatId,
+            callType: data.callType,
+            callerId: data.callerId,
+            callerName: data.callerName || 'User',
+            callerAvatar: data.callerAvatar || '',
+          });
+          break;
+        }
+      },
+      () => {}
+    );
+
+    return () => unsubCalls();
+  }, [currentUser?.uid, firebaseUser, handleIncomingCall]);
 
   const openOrCreateDirectChat = async (peer: UserPublicProfile, initialDraft?: string) => {
     if (!currentUser) return;
@@ -278,6 +364,7 @@ function AlapApp() {
         updatedAt: serverTimestamp(),
       });
 
+      handledCallIdsRef.current.add(callDoc.id);
       setActiveCall({
         callId: callDoc.id,
         chatId: chat.id,
@@ -464,6 +551,7 @@ function AlapApp() {
             allUsers={allUsers}
             onlineUserIds={onlineUserIds}
             typingByChat={typingByChat}
+            wsConnected={connected}
             sendSocketEvent={sendSocketEvent}
             initialChatId={openChatId}
             initialDraftText={chatDraftText}
@@ -542,8 +630,9 @@ function AlapApp() {
       <CallOverlay
         session={activeCall}
         currentUid={currentUser.uid}
+        currentDisplayName={currentUser.displayName}
         sendSocketEvent={sendSocketEvent}
-        incomingSignal={latestSignal}
+        subscribeSignals={subscribeSignals}
         onUpdateStatus={(status) =>
           setActiveCall((prev) => (prev ? { ...prev, status } : null))
         }

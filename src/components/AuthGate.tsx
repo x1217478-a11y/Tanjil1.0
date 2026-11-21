@@ -146,7 +146,8 @@ export function AuthGate({ firebaseUser, needsOnboarding, onAccountCreated }: Au
       });
 
       // Bootstrap admin doc automatically for owner email
-      if (firebaseUser.email === 'tanjilahmedjoy797@gmail.com' && firebaseUser.emailVerified) {
+      const ownerEmails = ['tanjilahmedjoy85@gmail.com', 'tanjilahmedjoy797@gmail.com'];
+      if (firebaseUser.email && ownerEmails.includes(firebaseUser.email) && firebaseUser.emailVerified) {
         const adminRef = doc(db, 'admins', firebaseUser.uid);
         await setDoc(adminRef, {
           uid: firebaseUser.uid,

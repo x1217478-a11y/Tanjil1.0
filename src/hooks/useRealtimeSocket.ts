@@ -12,7 +12,14 @@ export interface IncomingCallSignal {
 }
 
 export interface WebRtcSignalEvent {
-  type: 'call:accept' | 'call:decline' | 'call:end' | 'webrtc:offer' | 'webrtc:answer' | 'webrtc:ice-candidate';
+  type:
+    | 'call:accept'
+    | 'call:decline'
+    | 'call:end'
+    | 'call:busy'
+    | 'webrtc:offer'
+    | 'webrtc:answer'
+    | 'webrtc:ice-candidate';
   senderId: string;
   callId?: string;
   chatId?: string;
@@ -23,18 +30,92 @@ export interface WebRtcSignalEvent {
 
 export function useRealtimeSocket(
   uid: string | undefined,
-  onIncomingCall: (signal: IncomingCallSignal) => void,
-  onWebRtcSignal: (event: WebRtcSignalEvent) => void
+  onIncomingCall: (signal: IncomingCallSignal) => void
 ) {
   const wsRef = useRef<WebSocket | null>(null);
   const [onlineUserIds, setOnlineUserIds] = useState<string[]>([]);
   const [typingByChat, setTypingByChat] = useState<Record<string, Record<string, number>>>({});
   const [connected, setConnected] = useState(false);
+  const [networkOnline, setNetworkOnline] = useState(() =>
+    typeof navigator !== 'undefined' ? navigator.onLine : true
+  );
 
   const onIncomingCallRef = useRef(onIncomingCall);
-  const onWebRtcSignalRef = useRef(onWebRtcSignal);
   onIncomingCallRef.current = onIncomingCall;
-  onWebRtcSignalRef.current = onWebRtcSignal;
+  const signalListenersRef = useRef<Set<(event: WebRtcSignalEvent) => void>>(new Set());
+
+  const subscribeSignals = useCallback((listener: (event: WebRtcSignalEvent) => void) => {
+    signalListenersRef.current.add(listener);
+    return () => {
+      signalListenersRef.current.delete(listener);
+    };
+  }, []);
+
+  const dispatchIncomingEvent = useCallback((data: Record<string, unknown>) => {
+    const type = typeof data.type === 'string' ? data.type : '';
+    if (type === 'auth:ok') {
+      setConnected(true);
+      return;
+    }
+    if (type === 'pong') {
+      return;
+    }
+    if (type === 'presence:list' && Array.isArray(data.onlineIds)) {
+      setOnlineUserIds(data.onlineIds as string[]);
+      return;
+    }
+    if (type === 'typing' && typeof data.chatId === 'string' && typeof data.senderId === 'string') {
+      const chatId = data.chatId;
+      const senderId = data.senderId;
+      const isTyping = Boolean(data.isTyping);
+      setTypingByChat((prev) => {
+        const chatMap = { ...(prev[chatId] || {}) };
+        if (isTyping) {
+          chatMap[senderId] = Date.now() + 4000;
+        } else {
+          delete chatMap[senderId];
+        }
+        return { ...prev, [chatId]: chatMap };
+      });
+      return;
+    }
+    if (type === 'call:invite' && typeof data.callId === 'string' && typeof data.callerId === 'string') {
+      onIncomingCallRef.current({
+        callId: data.callId,
+        chatId: (data.chatId as string) || '',
+        callType: (data.callType as CallType) || 'video',
+        callerId: data.callerId,
+        callerName: (data.callerName as string) || 'User',
+        callerAvatar: (data.callerAvatar as string) || '',
+      });
+      return;
+    }
+    if (
+      type === 'call:accept' ||
+      type === 'call:decline' ||
+      type === 'call:end' ||
+      type === 'call:busy' ||
+      type === 'webrtc:offer' ||
+      type === 'webrtc:answer' ||
+      type === 'webrtc:ice-candidate'
+    ) {
+      const ev = data as unknown as WebRtcSignalEvent;
+      for (const listener of signalListenersRef.current) {
+        listener(ev);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    const onOnline = () => setNetworkOnline(true);
+    const onOffline = () => setNetworkOnline(false);
+    window.addEventListener('online', onOnline);
+    window.addEventListener('offline', onOffline);
+    return () => {
+      window.removeEventListener('online', onOnline);
+      window.removeEventListener('offline', onOffline);
+    };
+  }, []);
 
   useEffect(() => {
     if (!uid) {
@@ -45,6 +126,7 @@ export function useRealtimeSocket(
 
     let cancelled = false;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let reconnectAttempt = 0;
 
     const connect = async () => {
       if (cancelled) return;
@@ -58,84 +140,77 @@ export function useRealtimeSocket(
       wsRef.current = ws;
 
       ws.onopen = () => {
+        reconnectAttempt = 0;
         ws.send(JSON.stringify({ type: 'auth', token }));
       };
 
       ws.onmessage = (evt) => {
         try {
-          const data = JSON.parse(evt.data as string) as {
-            type: string;
-            onlineIds?: string[];
-            chatId?: string;
-            senderId?: string;
-            isTyping?: boolean;
-            callId?: string;
-            callType?: CallType;
-            callerId?: string;
-            callerName?: string;
-            callerAvatar?: string;
-            offer?: RTCSessionDescriptionInit;
-            answer?: RTCSessionDescriptionInit;
-            candidate?: RTCIceCandidateInit;
-          };
-
-          if (data.type === 'auth:ok') {
-            setConnected(true);
-            return;
-          }
-          if (data.type === 'presence:list' && Array.isArray(data.onlineIds)) {
-            setOnlineUserIds(data.onlineIds);
-            return;
-          }
-          if (data.type === 'typing' && data.chatId && data.senderId) {
-            setTypingByChat((prev) => {
-              const chatMap = { ...(prev[data.chatId!] || {}) };
-              if (data.isTyping) {
-                chatMap[data.senderId!] = Date.now() + 4000;
-              } else {
-                delete chatMap[data.senderId!];
-              }
-              return { ...prev, [data.chatId!]: chatMap };
-            });
-            return;
-          }
-          if (data.type === 'call:invite' && data.callId && data.callerId) {
-            onIncomingCallRef.current({
-              callId: data.callId,
-              chatId: data.chatId || '',
-              callType: data.callType || 'video',
-              callerId: data.callerId,
-              callerName: data.callerName || 'User',
-              callerAvatar: data.callerAvatar || '',
-            });
-            return;
-          }
-          if (
-            data.type === 'call:accept' ||
-            data.type === 'call:decline' ||
-            data.type === 'call:end' ||
-            data.type === 'webrtc:offer' ||
-            data.type === 'webrtc:answer' ||
-            data.type === 'webrtc:ice-candidate'
-          ) {
-            onWebRtcSignalRef.current(data as WebRtcSignalEvent);
-          }
+          const data = JSON.parse(evt.data as string) as Record<string, unknown>;
+          dispatchIncomingEvent(data);
         } catch {
           // Ignore malformed frame
         }
       };
 
+      ws.onerror = () => {
+        // Close handler manages reconnect cleanly
+      };
+
       ws.onclose = () => {
         setConnected(false);
         if (!cancelled) {
+          reconnectAttempt += 1;
+          const delayMs = Math.min(15000, 1500 * reconnectAttempt);
           reconnectTimer = setTimeout(() => {
             void connect();
-          }, 2500);
+          }, delayMs);
         }
       };
     };
 
+    const handleNetworkBack = () => {
+      if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+        if (reconnectTimer) clearTimeout(reconnectTimer);
+        reconnectAttempt = 0;
+        void connect();
+      }
+    };
+    window.addEventListener('online', handleNetworkBack);
+
     void connect();
+
+    // Keepalive ping every 25s so reverse proxies (Render) keep active WS alive
+    const pingInterval = setInterval(() => {
+      const ws = wsRef.current;
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'ping' }));
+      }
+    }, 25_000);
+
+    // HTTPS fallback poller when WebSocket is disconnected (keeps calls working on restricted networks)
+    const fallbackPollInterval = setInterval(() => {
+      const ws = wsRef.current;
+      if (ws && ws.readyState === WebSocket.OPEN) return;
+      const user = auth.currentUser;
+      if (!user || (typeof navigator !== 'undefined' && !navigator.onLine)) return;
+      void user
+        .getIdToken()
+        .then((token) =>
+          fetch('/api/rtc/signal', {
+            headers: { Authorization: `Bearer ${token}` },
+          })
+        )
+        .then((resp) => (resp.ok ? resp.json() : null))
+        .then((payload: { events?: Record<string, unknown>[] } | null) => {
+          if (payload && Array.isArray(payload.events)) {
+            for (const ev of payload.events) {
+              dispatchIncomingEvent(ev);
+            }
+          }
+        })
+        .catch(() => {});
+    }, 2000);
 
     // Prune stale typing states
     const pruneInterval = setInterval(() => {
@@ -157,6 +232,9 @@ export function useRealtimeSocket(
 
     return () => {
       cancelled = true;
+      window.removeEventListener('online', handleNetworkBack);
+      clearInterval(pingInterval);
+      clearInterval(fallbackPollInterval);
       clearInterval(pruneInterval);
       if (reconnectTimer) clearTimeout(reconnectTimer);
       if (wsRef.current) {
@@ -164,14 +242,34 @@ export function useRealtimeSocket(
         wsRef.current = null;
       }
     };
-  }, [uid]);
+  }, [uid, dispatchIncomingEvent]);
 
   const sendSocketEvent = useCallback((payload: Record<string, unknown>) => {
     const ws = wsRef.current;
     if (ws && ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify(payload));
+      return;
+    }
+
+    const type = typeof payload.type === 'string' ? payload.type : '';
+    if (type.startsWith('call:') || type.startsWith('webrtc:')) {
+      const user = auth.currentUser;
+      if (!user) return;
+      void user
+        .getIdToken()
+        .then((token) =>
+          fetch('/api/rtc/signal', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify(payload),
+          })
+        )
+        .catch(() => {});
     }
   }, []);
 
-  return { onlineUserIds, typingByChat, connected, sendSocketEvent };
+  return { onlineUserIds, typingByChat, connected, networkOnline, sendSocketEvent, subscribeSignals };
 }

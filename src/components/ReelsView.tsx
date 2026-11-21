@@ -6,6 +6,7 @@ import {
   doc,
   getDoc,
   increment,
+  limit,
   onSnapshot,
   query,
   serverTimestamp,
@@ -86,7 +87,8 @@ export function ReelsView({ currentUser, onViewProfile }: ReelsViewProps) {
     const q = query(
       collection(db, 'reels'),
       where('durationSeconds', '>=', VALIDATION_CONSTRAINTS.REEL_MIN_DURATION),
-      where('durationSeconds', '<=', VALIDATION_CONSTRAINTS.REEL_MAX_DURATION)
+      where('durationSeconds', '<=', VALIDATION_CONSTRAINTS.REEL_MAX_DURATION),
+      limit(30)
     );
     const unsub = onSnapshot(
       q,
@@ -125,7 +127,8 @@ export function ReelsView({ currentUser, onViewProfile }: ReelsViewProps) {
     }
     const q = query(
       collection(db, 'reels', activeReel.id, 'comments'),
-      where('reelId', '==', activeReel.id)
+      where('reelId', '==', activeReel.id),
+      limit(50)
     );
     const unsub = onSnapshot(
       q,

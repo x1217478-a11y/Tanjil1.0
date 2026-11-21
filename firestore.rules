@@ -31,7 +31,7 @@ service cloud.firestore {
     function isAdmin() {
       return isSignedIn() && (
         exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
-        request.auth.token.email == 'tanjilahmedjoy797@gmail.com'
+        request.auth.token.email in ['tanjilahmedjoy85@gmail.com', 'tanjilahmedjoy797@gmail.com']
       );
     }
 
@@ -278,7 +278,7 @@ service cloud.firestore {
       ]) &&
       data.keys().hasOnly([
         'authorId', 'authorName', 'authorAvatar', 'authorVerified',
-        'mediaUrl', 'mediaType', 'caption', 'bgStyle', 'viewersCount', 'expiresAtMs', 'createdAt'
+        'mediaUrl', 'mediaType', 'caption', 'bgStyle', 'viewersCount', 'reactions', 'expiresAtMs', 'createdAt'
       ]) &&
       isValidId(data.authorId) &&
       isValidString(data.authorName, 1, 60) &&
@@ -289,6 +289,7 @@ service cloud.firestore {
       (!('caption' in data) || isValidString(data.caption, 0, 300)) &&
       (!('bgStyle' in data) || isValidString(data.bgStyle, 0, 64)) &&
       data.viewersCount is number && data.viewersCount >= 0 &&
+      (!('reactions' in data) || (data.reactions is map && data.reactions.size() <= 500)) &&
       data.expiresAtMs is number && data.expiresAtMs > 0 &&
       data.createdAt is timestamp;
     }
@@ -457,7 +458,7 @@ service cloud.firestore {
       allow list: if isAdmin();
       allow create: if isSignedIn() && isValidId(userId) && isValidAdminRecord(incoming()) &&
         incoming().createdAt == request.time &&
-        (isAdmin() || (isOwner(userId) && request.auth.token.email == 'tanjilahmedjoy797@gmail.com'));
+        (isAdmin() || (isOwner(userId) && request.auth.token.email in ['tanjilahmedjoy85@gmail.com', 'tanjilahmedjoy797@gmail.com']));
       allow update, delete: if isAdmin();
     }
 
@@ -661,13 +662,27 @@ service cloud.firestore {
       allow create: if isSignedIn() && isValidId(storyId) && isValidStoryItem(incoming()) &&
         incoming().authorId == request.auth.uid &&
         incoming().viewersCount == 0 &&
+        (!('reactions' in incoming()) || incoming().reactions.size() == 0) &&
         incoming().createdAt == request.time;
       allow update: if isSignedIn() && isValidId(storyId) && isValidStoryItem(incoming()) &&
         incoming().authorId == existing().authorId &&
-        incoming().createdAt == existing().createdAt &&
-        incoming().diff(existing()).affectedKeys().hasOnly(['viewersCount']) &&
-        incoming().viewersCount >= existing().viewersCount &&
-        incoming().viewersCount <= existing().viewersCount + 1;
+        incoming().expiresAtMs == existing().expiresAtMs &&
+        incoming().createdAt == existing().createdAt && (
+          (incoming().diff(existing()).affectedKeys().hasOnly(['viewersCount']) &&
+            incoming().viewersCount >= existing().viewersCount &&
+            incoming().viewersCount <= existing().viewersCount + 1) ||
+          (incoming().diff(existing()).affectedKeys().hasOnly(['reactions']) &&
+            incoming().reactions is map &&
+            (
+              ('reactions' in existing() &&
+                incoming().reactions.diff(existing().reactions).affectedKeys().hasOnly([request.auth.uid])) ||
+              (!('reactions' in existing()) &&
+                incoming().reactions.keys().hasOnly([request.auth.uid]))
+            ) &&
+            (!(request.auth.uid in incoming().reactions) ||
+              (incoming().reactions[request.auth.uid] is string &&
+               incoming().reactions[request.auth.uid] in ['❤️', '🔥', '😂', '😮', '😢', '👍'])))
+        );
       allow delete: if isSignedIn() && isValidId(storyId) && (existing().authorId == request.auth.uid || isAdmin());
 
       match /views/{viewerId} {
